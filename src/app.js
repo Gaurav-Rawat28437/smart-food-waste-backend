@@ -93,87 +93,95 @@ app.get("/", (req, res) => {
 
 
 // CREATE DONOR
-app.post(
-    "/api/donors",
-    isLoggedIn,
-    authorize("DONOR"),
-    async (req, res) => {
+app.post("/api/donors", isLoggedIn, async (req, res) => {
+    try {
+        console.log("========== DONOR REQUEST ==========");
+        console.log("User:", req.user);
+        console.log("Body:", req.body);
 
-        try {
+        const {
+            organizationName,
+            phone,
+            address,
+            location
+        } = req.body;
 
-            console.log(
-                "Donor data received:",
-                req.body
-            );
-
-
-            const donor =
-                await Donor.create({
-
-                    ...req.body,
-
-                    userId:
-                        req.user._id
-
-                });
-
-
-            await addRow(
-                "Donors",
-                [
-
-                    donor.donorId,
-
-                    donor.userId.toString(),
-
-                    donor.organizationName,
-
-                    donor.phone,
-
-                    donor.address,
-
-                    donor.location?.latitude
-                        || "",
-
-                    donor.location?.longitude
-                        || ""
-
-                ]
-            );
-
-
-            res.status(201).json({
-
-                success: true,
-
-                message:
-                    "Donor created successfully",
-
-                donor
-
-            });
-
-
-        } catch (error) {
-
-            console.error(
-                "Donor creation error:",
-                error.message
-            );
-
-            res.status(500).json({
-
+        if (!organizationName || !phone || !address) {
+            return res.status(400).json({
                 success: false,
-
-                message:
-                    error.message
-
+                message: "Please enter all required donor fields"
             });
-
         }
 
+        if (req.user.role !== "DONOR") {
+            return res.status(403).json({
+                success: false,
+                message: "Only DONOR users can create donor profiles"
+            });
+        }
+
+        // Check whether this user already has a donor profile
+        const existingDonor = await Donor.findOne({
+            userId: req.user._id
+        });
+
+        if (existingDonor) {
+            return res.status(400).json({
+                success: false,
+                message: "Donor profile already exists",
+                donor: existingDonor
+            });
+        }
+
+        // Generate donor ID
+        const donorId = `DON${Date.now()}`;
+
+        console.log("Generated donorId:", donorId);
+
+        // Save donor
+        const donor = await Donor.create({
+            donorId: donorId,
+            userId: req.user._id,
+            organizationName: organizationName,
+            phone: phone,
+            address: address,
+            location: location
+        });
+
+        console.log(
+            "Donor saved in MongoDB:",
+            donor._id
+        );
+
+        // Google Sheet
+        await addRow("Donors", [
+            donor.donorId,
+            donor.userId.toString(),
+            donor.organizationName,
+            donor.phone,
+            donor.address,
+            donor.location?.latitude || "",
+            donor.location?.longitude || ""
+        ]);
+
+        console.log("Donor saved in Google Sheets");
+
+        res.status(201).json({
+            success: true,
+            message: "Donor created successfully",
+            donor
+        });
+
+    } catch (error) {
+
+        console.error("DONOR ERROR:", error);
+
+        res.status(500).json({
+            success: false,
+            message: error.message
+        });
     }
-);
+});
 
 
 // GET DONORS
