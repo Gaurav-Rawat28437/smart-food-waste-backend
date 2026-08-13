@@ -1,34 +1,22 @@
 const express = require("express");
-
 const cors = require("cors");
-
-const cookieParser =
-    require("cookie-parser");
-
+const cookieParser = require("cookie-parser");
 require("dotenv").config();
 
+const Donor = require("./models/Donor");
+const Donation = require("./models/Donation");
+const NGO = require("./models/NGO");
+const Claim = require("./models/Claim");
 
-const Donor =
-    require("./models/Donor");
-
-const Donation =
-    require("./models/Donation");
-
-const NGO =
-    require("./models/NGO");
-
-const Claim =
-    require("./models/Claim");
-
-    const {
-
-    addRow
+const {
+    addRow,
+    updateDonationRow
 } = require("./services/googleSheets");
 
+const syncDAOutput =
+    require("./services/daSync");
 
-const authRouter =
-    require("./routes/auth.routes");
-
+const authRouter = require("./routes/auth.routes");
 
 const {
     isLoggedIn,
@@ -45,12 +33,8 @@ const app = express();
 
 app.use(
     cors({
-
-        origin:
-            "http://localhost:5173",
-
+        origin: "http://localhost:5173",
         credentials: true
-
     })
 );
 
@@ -92,99 +76,209 @@ app.get("/", (req, res) => {
 // ==========================================
 
 
+// ==========================================
 // CREATE DONOR
-app.post("/api/donors", isLoggedIn, async (req, res) => {
-    try {
-        console.log("========== DONOR REQUEST ==========");
-        console.log("User:", req.user);
-        console.log("Body:", req.body);
+// ==========================================
 
-        const {
-            organizationName,
-            phone,
-            address,
-            location
-        } = req.body;
+app.post(
+    "/api/donors",
+    isLoggedIn,
+    async (req, res) => {
 
-        if (!organizationName || !phone || !address) {
-            return res.status(400).json({
-                success: false,
-                message: "Please enter all required donor fields"
+        try {
+
+            console.log(
+                "========== DONOR REQUEST =========="
+            );
+
+            console.log(
+                "User:",
+                req.user
+            );
+
+            console.log(
+                "Body:",
+                req.body
+            );
+
+
+            const {
+                organizationName,
+                phone,
+                address,
+                location
+            } = req.body;
+
+
+            if (
+                !organizationName ||
+                !phone ||
+                !address
+            ) {
+
+                return res.status(400).json({
+
+                    success: false,
+
+                    message:
+                        "Please enter all required donor fields"
+
+                });
+
+            }
+
+
+            if (
+                req.user.role !== "DONOR"
+            ) {
+
+                return res.status(403).json({
+
+                    success: false,
+
+                    message:
+                        "Only DONOR users can create donor profiles"
+
+                });
+
+            }
+
+
+            // Check existing donor profile
+
+            const existingDonor =
+                await Donor.findOne({
+
+                    userId:
+                        req.user._id
+
+                });
+
+
+            if (existingDonor) {
+
+                return res.status(400).json({
+
+                    success: false,
+
+                    message:
+                        "Donor profile already exists",
+
+                    donor:
+                        existingDonor
+
+                });
+
+            }
+
+
+            // Generate donor ID
+
+            const donorId =
+                `DON${Date.now()}`;
+
+
+            console.log(
+                "Generated donorId:",
+                donorId
+            );
+
+
+            // Create donor
+
+            const donor =
+                await Donor.create({
+
+                    donorId,
+
+                    userId:
+                        req.user._id,
+
+                    organizationName,
+
+                    phone,
+
+                    address,
+
+                    location
+
+                });
+
+
+            console.log(
+                "Donor saved in MongoDB:",
+                donor._id
+            );
+
+
+            // Save to Google Sheet
+
+            await addRow(
+                "Donors",
+                [
+
+                    donor.donorId,
+
+                    donor.userId.toString(),
+
+                    donor.organizationName,
+
+                    donor.phone,
+
+                    donor.address,
+
+                    donor.location?.latitude || "",
+
+                    donor.location?.longitude || ""
+
+                ]
+            );
+
+
+            console.log(
+                "Donor saved in Google Sheets"
+            );
+
+
+            res.status(201).json({
+
+                success: true,
+
+                message:
+                    "Donor created successfully",
+
+                donor
+
             });
+
+
+        } catch (error) {
+
+            console.error(
+                "DONOR ERROR:",
+                error
+            );
+
+
+            res.status(500).json({
+
+                success: false,
+
+                message:
+                    error.message
+
+            });
+
         }
 
-        if (req.user.role !== "DONOR") {
-            return res.status(403).json({
-                success: false,
-                message: "Only DONOR users can create donor profiles"
-            });
-        }
-
-        // Check whether this user already has a donor profile
-        const existingDonor = await Donor.findOne({
-            userId: req.user._id
-        });
-
-        if (existingDonor) {
-            return res.status(400).json({
-                success: false,
-                message: "Donor profile already exists",
-                donor: existingDonor
-            });
-        }
-
-        // Generate donor ID
-        const donorId = `DON${Date.now()}`;
-
-        console.log("Generated donorId:", donorId);
-
-        // Save donor
-        const donor = await Donor.create({
-            donorId: donorId,
-            userId: req.user._id,
-            organizationName: organizationName,
-            phone: phone,
-            address: address,
-            location: location
-        });
-
-        console.log(
-            "Donor saved in MongoDB:",
-            donor._id
-        );
-
-        // Google Sheet
-        await addRow("Donors", [
-            donor.donorId,
-            donor.userId.toString(),
-            donor.organizationName,
-            donor.phone,
-            donor.address,
-            donor.location?.latitude || "",
-            donor.location?.longitude || ""
-        ]);
-
-        console.log("Donor saved in Google Sheets");
-
-        res.status(201).json({
-            success: true,
-            message: "Donor created successfully",
-            donor
-        });
-
-    } catch (error) {
-
-        console.error("DONOR ERROR:", error);
-
-        res.status(500).json({
-            success: false,
-            message: error.message
-        });
     }
-});
+);
 
 
+// ==========================================
 // GET DONORS
+// ==========================================
+
 app.get(
     "/api/donors",
     isLoggedIn,
@@ -196,6 +290,7 @@ app.get(
             const donors =
                 await Donor.find();
 
+
             res.status(200).json({
 
                 success: true,
@@ -206,6 +301,7 @@ app.get(
                 donors
 
             });
+
 
         } catch (error) {
 
@@ -224,7 +320,10 @@ app.get(
 );
 
 
+// ==========================================
 // GET DONOR BY ID
+// ==========================================
+
 app.get(
     "/api/donors/:id",
     isLoggedIn,
@@ -236,6 +335,7 @@ app.get(
                 await Donor.findById(
                     req.params.id
                 );
+
 
             if (!donor) {
 
@@ -259,6 +359,7 @@ app.get(
 
             });
 
+
         } catch (error) {
 
             res.status(500).json({
@@ -281,7 +382,10 @@ app.get(
 // ==========================================
 
 
+// ==========================================
 // CREATE DONATION
+// ==========================================
+
 app.post(
     "/api/donations",
     isLoggedIn,
@@ -300,6 +404,8 @@ app.post(
 
                 });
 
+
+            // Save donation to Google Sheet
 
             await addRow(
                 "Donations",
@@ -321,7 +427,13 @@ app.post(
 
                     donation.expiryTime,
 
-                    donation.status
+                    donation.status,
+
+                    donation.priority || "",
+
+                    donation.recommendedNGO || "",
+
+                    donation.reason || ""
 
                 ]
             );
@@ -343,8 +455,9 @@ app.post(
 
             console.error(
                 "Donation creation error:",
-                error.message
+                error
             );
+
 
             res.status(500).json({
 
@@ -361,7 +474,10 @@ app.post(
 );
 
 
+// ==========================================
 // GET DONATIONS
+// ==========================================
+
 app.get(
     "/api/donations",
     isLoggedIn,
@@ -373,9 +489,7 @@ app.get(
             const donations =
                 await Donation
                     .find()
-                    .populate(
-                        "donorId"
-                    );
+                    .populate("donorId");
 
 
             res.status(200).json({
@@ -389,7 +503,163 @@ app.get(
 
             });
 
+
         } catch (error) {
+
+            res.status(500).json({
+
+                success: false,
+
+                message:
+                    error.message
+
+            });
+
+        }
+
+    }
+);
+
+
+// ==========================================
+// UPDATE DONATION STATUS
+// ==========================================
+
+app.patch(
+    "/api/donations/:donationId/status",
+    isLoggedIn,
+    async (req, res) => {
+
+        try {
+
+            const {
+                status
+            } = req.body;
+
+
+            // Allowed statuses
+
+            const allowedStatuses = [
+
+                "AVAILABLE",
+
+                "CLAIMED",
+
+                "PICKED_UP",
+
+                "DELIVERED",
+
+                "EXPIRED"
+
+            ];
+
+
+            if (
+                !allowedStatuses.includes(status)
+            ) {
+
+                return res.status(400).json({
+
+                    success: false,
+
+                    message:
+                        "Invalid donation status"
+
+                });
+
+            }
+
+
+            // Find donation
+
+            const donation =
+                await Donation.findOne({
+
+                    donationId:
+                        req.params.donationId
+
+                });
+
+
+            if (!donation) {
+
+                return res.status(404).json({
+
+                    success: false,
+
+                    message:
+                        "Donation not found"
+
+                });
+
+            }
+
+
+            // Update MongoDB
+
+            donation.status =
+                status;
+
+
+            await donation.save();
+
+
+            // Update Google Sheet
+
+            await updateDonationRow(
+
+                donation.donationId,
+
+                [
+
+                    donation.donationId,
+
+                    donation.donorId?.toString() || "",
+
+                    donation.foodName,
+
+                    donation.category,
+
+                    donation.quantity,
+
+                    donation.unit,
+
+                    donation.location,
+
+                    donation.expiryTime,
+
+                    donation.status,
+
+                    donation.priority || "",
+
+                    donation.recommendedNGO || "",
+
+                    donation.reason || ""
+
+                ]
+
+            );
+
+
+            res.status(200).json({
+
+                success: true,
+
+                message:
+                    "Donation status updated successfully",
+
+                donation
+
+            });
+
+
+        } catch (error) {
+
+            console.error(
+                "Donation status update error:",
+                error
+            );
+
 
             res.status(500).json({
 
@@ -411,7 +681,10 @@ app.get(
 // ==========================================
 
 
+// ==========================================
 // CREATE NGO PROFILE
+// ==========================================
+
 app.post(
     "/api/ngos",
     isLoggedIn,
@@ -479,11 +752,15 @@ app.post(
                 });
 
 
+            // Save NGO to Google Sheet
+
             await addRow(
                 "NGOs",
                 [
 
                     ngo.ngoId,
+
+                    ngo.userId.toString(),
 
                     ngo.organizationName,
 
@@ -496,16 +773,12 @@ app.post(
                     Array.isArray(
                         ngo.foodTypes
                     )
-                        ? ngo.foodTypes.join(
-                            ", "
-                        )
+                        ? ngo.foodTypes.join(", ")
                         : "",
 
-                    ngo.location?.latitude
-                        || "",
+                    ngo.location?.latitude || "",
 
-                    ngo.location?.longitude
-                        || ""
+                    ngo.location?.longitude || ""
 
                 ]
             );
@@ -527,8 +800,9 @@ app.post(
 
             console.error(
                 "NGO creation error:",
-                error.message
+                error
             );
+
 
             res.status(500).json({
 
@@ -545,7 +819,10 @@ app.post(
 );
 
 
+// ==========================================
 // GET NGOS
+// ==========================================
+
 app.get(
     "/api/ngos",
     isLoggedIn,
@@ -556,6 +833,7 @@ app.get(
 
             const ngos =
                 await NGO.find();
+
 
             res.status(200).json({
 
@@ -568,12 +846,14 @@ app.get(
 
             });
 
+
         } catch (error) {
 
             console.error(
                 "Get NGOs error:",
-                error.message
+                error
             );
+
 
             res.status(500).json({
 
@@ -590,7 +870,10 @@ app.get(
 );
 
 
-// GET NGO
+// ==========================================
+// GET NGO BY ID
+// ==========================================
+
 app.get(
     "/api/ngos/:id",
     isLoggedIn,
@@ -602,6 +885,7 @@ app.get(
                 await NGO.findById(
                     req.params.id
                 );
+
 
             if (!ngo) {
 
@@ -625,6 +909,7 @@ app.get(
 
             });
 
+
         } catch (error) {
 
             res.status(500).json({
@@ -647,7 +932,10 @@ app.get(
 // ==========================================
 
 
+// ==========================================
 // CLAIM DONATION
+// ==========================================
+
 app.post(
     "/api/claims",
     isLoggedIn,
@@ -661,6 +949,8 @@ app.post(
                 req.user.email
             );
 
+
+            // Find donation
 
             const donation =
                 await Donation.findById(
@@ -681,6 +971,8 @@ app.post(
 
             }
 
+
+            // Find NGO profile
 
             const ngo =
                 await NGO.findOne({
@@ -705,6 +997,8 @@ app.post(
             }
 
 
+            // Check donation status
+
             if (
                 donation.status !==
                 "AVAILABLE"
@@ -722,6 +1016,8 @@ app.post(
             }
 
 
+            // Create claim
+
             const claim =
                 await Claim.create({
 
@@ -737,6 +1033,8 @@ app.post(
                 });
 
 
+            // Change donation status
+
             donation.status =
                 "CLAIMED";
 
@@ -744,22 +1042,58 @@ app.post(
             await donation.save();
 
 
+            // Update Donations sheet
+
+            await updateDonationRow(
+
+                donation.donationId,
+
+                [
+
+                    donation.donationId,
+
+                    donation.donorId?.toString() || "",
+
+                    donation.foodName,
+
+                    donation.category,
+
+                    donation.quantity,
+
+                    donation.unit,
+
+                    donation.location,
+
+                    donation.expiryTime,
+
+                    donation.status,
+
+                    donation.priority || "",
+
+                    donation.recommendedNGO || "",
+
+                    donation.reason || ""
+
+                ]
+
+            );
+
+
+            // Add claim to Claims sheet
+
             await addRow(
                 "Claims",
                 [
 
                     claim.claimId,
 
-                    claim.donationId
-                        .toString(),
+                    claim.donationId.toString(),
 
-                    claim.ngoId
-                        .toString(),
+                    claim.ngoId.toString(),
 
                     "CLAIMED",
 
-                    new Date()
-                        .toISOString()
+                    new Date().toISOString()
 
                 ]
             );
@@ -781,8 +1115,9 @@ app.post(
 
             console.error(
                 "Claim creation error:",
-                error.message
+                error
             );
+
 
             res.status(500).json({
 
@@ -799,7 +1134,10 @@ app.post(
 );
 
 
+// ==========================================
 // GET CLAIMS
+// ==========================================
+
 app.get(
     "/api/claims",
     isLoggedIn,
@@ -811,12 +1149,8 @@ app.get(
             const claims =
                 await Claim
                     .find()
-                    .populate(
-                        "donationId"
-                    )
-                    .populate(
-                        "ngoId"
-                    );
+                    .populate("donationId")
+                    .populate("ngoId");
 
 
             res.status(200).json({
@@ -830,12 +1164,14 @@ app.get(
 
             });
 
+
         } catch (error) {
 
             console.error(
                 "Get claims error:",
-                error.message
+                error
             );
+
 
             res.status(500).json({
 
@@ -891,28 +1227,38 @@ app.get(
                 Donation.countDocuments(),
 
                 Donation.countDocuments({
+
                     status:
                         "AVAILABLE"
+
                 }),
 
                 Donation.countDocuments({
+
                     status:
                         "CLAIMED"
+
                 }),
 
                 Donation.countDocuments({
+
                     status:
                         "PICKED_UP"
+
                 }),
 
                 Donation.countDocuments({
+
                     status:
                         "DELIVERED"
+
                 }),
 
                 Donation.countDocuments({
+
                     status:
                         "EXPIRED"
+
                 })
 
             ]);
@@ -975,9 +1321,13 @@ app.get(
             await addRow(
                 "Donors",
                 [
+
                     "TEST001",
+
                     "Test Restaurant",
+
                     "9999999999"
+
                 ]
             );
 
@@ -996,8 +1346,9 @@ app.get(
 
             console.error(
                 "Test Sheets Error:",
-                error.message
+                error
             );
+
 
             res.status(500).json({
 
@@ -1015,98 +1366,36 @@ app.get(
 
 
 // ==========================================
-// DA OUTPUT
+// DA OUTPUT SYNC TEST
 // ==========================================
 
 app.post(
-    "/api/da-output",
+    "/api/sync-da-output",
+    isLoggedIn,
+    authorize("ADMIN"),
     async (req, res) => {
 
         try {
 
-            const {
-
-                donationId,
-
-                priority,
-
-                recommendedNGO,
-
-                reason
-
-            } = req.body;
-
-
-            if (
-                !donationId ||
-                !priority
-            ) {
-
-                return res.status(400).json({
-
-                    success: false,
-
-                    message:
-                        "donationId and priority are required"
-
-                });
-
-            }
-
-
-            const donation =
-                await Donation.findOne({
-
-                    donationId:
-                        donationId
-
-                });
-
-
-            if (!donation) {
-
-                return res.status(404).json({
-
-                    success: false,
-
-                    message:
-                        "Donation not found"
-
-                });
-
-            }
-
-
-            donation.priority =
-                priority;
-
-            donation.recommendedNGO =
-                recommendedNGO;
-
-            donation.reason =
-                reason;
-
-
-            await donation.save();
-
+            const result =
+                await syncDAOutput();
 
             res.status(200).json({
 
                 success: true,
 
                 message:
-                    "DA output saved successfully",
+                    "DA output synced successfully",
 
-                donation
+                result
 
             });
-
 
         } catch (error) {
 
             console.error(
-                "DA output error:",
-                error.message
+                "DA sync route error:",
+                error
             );
 
             res.status(500).json({
@@ -1123,5 +1412,9 @@ app.post(
     }
 );
 
+
+// ==========================================
+// EXPORT
+// ==========================================
 
 module.exports = app;

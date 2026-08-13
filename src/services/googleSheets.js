@@ -13,17 +13,21 @@ const sheets = google.sheets({
     auth
 });
 
-const spreadsheetId = process.env.GOOGLE_SPREADSHEET_ID;
+const spreadsheetId =
+    process.env.GOOGLE_SPREADSHEET_ID;
 
 
 // ========================================
-// ADD ROW TO GOOGLE SHEET
+// ADD ROW
 // ========================================
 
 const addRow = async (sheetName, rowData) => {
+
     try {
+
         await sheets.spreadsheets.values.append({
-            spreadsheetId: spreadsheetId,
+
+            spreadsheetId,
 
             range: `${sheetName}!A:Z`,
 
@@ -34,13 +38,17 @@ const addRow = async (sheetName, rowData) => {
             requestBody: {
                 values: [rowData]
             }
+
         });
 
-        console.log(`Row added to ${sheetName}`);
+        console.log(
+            `Row added to ${sheetName}`
+        );
 
     } catch (error) {
+
         console.error(
-            `Google Sheets error:`,
+            "Google Sheets add error:",
             error.message
         );
 
@@ -50,22 +58,28 @@ const addRow = async (sheetName, rowData) => {
 
 
 // ========================================
-// READ ROWS FROM GOOGLE SHEET
+// READ ROWS
 // ========================================
 
 const getRows = async (sheetName) => {
-    try {
-        const response = await sheets.spreadsheets.values.get({
-            spreadsheetId: spreadsheetId,
 
-            range: `${sheetName}!A:Z`
-        });
+    try {
+
+        const response =
+            await sheets.spreadsheets.values.get({
+
+                spreadsheetId,
+
+                range: `${sheetName}!A:Z`
+
+            });
 
         return response.data.values || [];
 
     } catch (error) {
+
         console.error(
-            `Google Sheets read error:`,
+            "Google Sheets read error:",
             error.message
         );
 
@@ -74,7 +88,87 @@ const getRows = async (sheetName) => {
 };
 
 
+// ========================================
+// UPDATE DONATION ROW
+// ========================================
+
+const updateDonationRow = async (
+    donationId,
+    rowData
+) => {
+
+    try {
+
+        // Read Donations sheet
+        const rows =
+            await getRows("Donations");
+
+        if (!rows || rows.length <= 1) {
+
+            throw new Error(
+                "Donations sheet is empty"
+            );
+        }
+
+        // Find donation row
+        const rowIndex =
+            rows.findIndex(
+                (row, index) =>
+                    index > 0 &&
+                    row[0] === donationId
+            );
+
+        if (rowIndex === -1) {
+
+            throw new Error(
+                `Donation ${donationId} not found in Google Sheet`
+            );
+        }
+
+        // Google Sheet rows start from 1
+        const sheetRow =
+            rowIndex + 1;
+
+        await sheets.spreadsheets.values.update({
+
+            spreadsheetId,
+
+            range:
+                `Donations!A${sheetRow}:L${sheetRow}`,
+
+            valueInputOption:
+                "USER_ENTERED",
+
+            requestBody: {
+                values: [rowData]
+            }
+
+        });
+
+        console.log(
+            `Donation ${donationId} updated in Google Sheet`
+        );
+
+    } catch (error) {
+
+        console.error(
+            "Google Sheets donation update error:",
+            error.message
+        );
+
+        throw error;
+    }
+};
+
+
+// ========================================
+// EXPORT
+// ========================================
+
 module.exports = {
+
     addRow,
-    getRows
+    getRows,
+    updateDonationRow
+
 };
