@@ -33,7 +33,7 @@ const app = express();
 
 app.use(
     cors({
-        origin: "http://localhost:5173",
+        origin: "https://smart-food-waste-and-donation-platf.vercel.app/",
         credentials: true
     })
 );

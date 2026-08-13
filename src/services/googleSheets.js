@@ -1,12 +1,40 @@
 const { google } = require("googleapis");
 
-const auth = new google.auth.GoogleAuth({
-    keyFile: "credentials/service-account.json",
+// ========================================
+// GOOGLE AUTHENTICATION
+// ========================================
 
-    scopes: [
-        "https://www.googleapis.com/auth/spreadsheets"
-    ]
-});
+let auth;
+
+if (process.env.GOOGLE_SERVICE_ACCOUNT_JSON) {
+
+    // Production / Render
+    const credentials = JSON.parse(
+        process.env.GOOGLE_SERVICE_ACCOUNT_JSON
+    );
+
+    auth = new google.auth.GoogleAuth({
+        credentials,
+        scopes: [
+            "https://www.googleapis.com/auth/spreadsheets"
+        ]
+    });
+
+} else {
+
+    // Local development
+    auth = new google.auth.GoogleAuth({
+        keyFile: "credentials/service-account.json",
+        scopes: [
+            "https://www.googleapis.com/auth/spreadsheets"
+        ]
+    });
+
+}
+
+// ========================================
+// GOOGLE SHEETS CLIENT
+// ========================================
 
 const sheets = google.sheets({
     version: "v4",
@@ -125,7 +153,7 @@ const updateDonationRow = async (
             );
         }
 
-        // Google Sheet rows start from 1
+        // Google Sheets row numbers start from 1
         const sheetRow =
             rowIndex + 1;
 
@@ -166,9 +194,7 @@ const updateDonationRow = async (
 // ========================================
 
 module.exports = {
-
     addRow,
     getRows,
     updateDonationRow
-
 };
