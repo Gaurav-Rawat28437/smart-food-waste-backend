@@ -33,7 +33,10 @@ const app = express();
 
 app.use(
     cors({
-        origin: "https://ff-dusky-mu.vercel.app",
+        origin: [
+            "http://localhost:5173",
+            "https://ff-dusky-mu.vercel.app"
+        ],
         credentials: true
     })
 );
