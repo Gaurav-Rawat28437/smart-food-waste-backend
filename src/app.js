@@ -35,7 +35,7 @@ app.use(
     cors({
         origin: [
             "http://localhost:5173",
-            "https://smart-food-waste-frontend-iota.vercel.app"
+            "https://smart-food-waste-frontend-iota.vercel.app/"
         ],
         credentials: true
     })
